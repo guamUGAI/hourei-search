@@ -15,7 +15,7 @@ import { LawTypeBadge } from "@/components/law-type-badge";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { getLaws } from "@/lib/hourei-api";
-import type { LawListItem, LawType } from "@/types/hourei";
+import type { LawListItem } from "@/types/hourei";
 
 export default function SearchScreen() {
   const colors = useColors();
@@ -111,10 +111,42 @@ export default function SearchScreen() {
           分類: {item.revision_info.category}
         </Text>
       )}
+      
+      {/* 詳細情報セクション */}
+      <View style={styles.infoSection}>
+        <View style={styles.infoRow}>
+          <Text style={[styles.infoLabel, { color: colors.muted }]}>公布日</Text>
+          <Text style={[styles.infoValue, { color: colors.foreground }]}>
+            {item.law_info.promulgation_date}
+          </Text>
+        </View>
+        {item.revision_info.amendment_enforcement_date && (
+          <View style={styles.infoRow}>
+            <Text style={[styles.infoLabel, { color: colors.muted }]}>施行日</Text>
+            <Text style={[styles.infoValue, { color: colors.foreground }]}>
+              {item.revision_info.amendment_enforcement_date}
+            </Text>
+          </View>
+        )}
+        {item.revision_info.updated && (
+          <View style={styles.infoRow}>
+            <Text style={[styles.infoLabel, { color: colors.muted }]}>最終更新</Text>
+            <Text style={[styles.infoValue, { color: colors.foreground }]}>
+              {item.revision_info.updated}
+            </Text>
+          </View>
+        )}
+        {item.revision_info.mission && (
+          <View style={styles.infoRow}>
+            <Text style={[styles.infoLabel, { color: colors.muted }]}>担当省庁</Text>
+            <Text style={[styles.infoValue, { color: colors.foreground }]} numberOfLines={1}>
+              {item.revision_info.mission}
+            </Text>
+          </View>
+        )}
+      </View>
+
       <View style={styles.cardFooter}>
-        <Text style={[styles.dateText, { color: colors.muted }]}>
-          公布: {item.law_info.promulgation_date}
-        </Text>
         <IconSymbol name="chevron.right" size={16} color={colors.muted} />
       </View>
     </Pressable>
@@ -289,7 +321,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    gap: 6,
+    gap: 8,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -309,14 +341,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
+  infoSection: {
+    gap: 6,
+    paddingTop: 4,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    minWidth: 60,
+  },
+  infoValue: {
+    fontSize: 11,
+    flex: 1,
+    textAlign: 'right',
+  },
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 2,
-  },
-  dateText: {
-    fontSize: 12,
+    justifyContent: 'flex-end',
+    marginTop: 4,
   },
   loadingContainer: {
     flex: 1,
