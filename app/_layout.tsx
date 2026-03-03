@@ -88,6 +88,13 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="oauth/callback" />
+            <Stack.Screen
+              name="law-detail"
+              options={{
+                headerShown: false,
+                animation: 'slide_from_right',
+              }}
+            />
           </Stack>
           <StatusBar style="auto" />
         </QueryClientProvider>

@@ -14,8 +14,8 @@ import { ScreenContainer } from "@/components/screen-container";
 import { LawTypeBadge } from "@/components/law-type-badge";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
-import { searchByKeyword } from "@/lib/hourei-api";
-import type { KeywordSearchItem, LawType } from "@/types/hourei";
+import { getLaws } from "@/lib/hourei-api";
+import type { LawListItem, LawType } from "@/types/hourei";
 
 const LAW_TYPE_FILTERS: { label: string; value: LawType | null }[] = [
   { label: 'すべて', value: null },
@@ -25,52 +25,22 @@ const LAW_TYPE_FILTERS: { label: string; value: LawType | null }[] = [
   { label: '規則', value: 'Rule' },
 ];
 
-function stripHtmlTags(html: string): string {
-  return html.replace(/<[^>]*>/g, '');
-}
-
-function HighlightedText({ html, style }: { html: string; style?: object }) {
-  // HTMLのmarkタグをハイライト表示
-  const parts = html.split(/(<mark>[^<]*<\/mark>)/g);
-  return (
-    <Text style={style} numberOfLines={3}>
-      {parts.map((part, i) => {
-        const match = part.match(/^<mark>(.*)<\/mark>$/);
-        if (match) {
-          return (
-            <Text key={i} style={styles.highlight}>
-              {match[1]}
-            </Text>
-          );
-        }
-        return <Text key={i}>{part}</Text>;
-      })}
-    </Text>
-  );
-}
-
-export default function SearchScreen() {
+export default function LawsScreen() {
   const colors = useColors();
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<KeywordSearchItem[]>([]);
+  const [results, setResults] = useState<LawListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
-  const [nextOffset, setNextOffset] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [selectedType, setSelectedType] = useState<LawType | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const performSearch = useCallback(async (keyword: string, lawType: LawType | null, offset = 0) => {
-    if (!keyword.trim()) {
-      setResults([]);
-      setHasSearched(false);
-      return;
-    }
-
-    if (offset === 0) {
+  const performSearch = useCallback(async (title: string, lawType: LawType | null, newOffset = 0) => {
+    if (newOffset === 0) {
       setLoading(true);
       setError(null);
       setResults([]);
@@ -79,25 +49,23 @@ export default function SearchScreen() {
     }
 
     try {
-      const response = await searchByKeyword({
-        keyword: keyword.trim(),
+      const response = await getLaws({
+        law_title: title.trim() || undefined,
         law_type: lawType ? [lawType] : undefined,
-        limit: 20,
-        offset,
-        sentence_text_size: 150,
-        highlight_tag: 'mark',
+        limit: 30,
+        offset: newOffset,
       });
 
-      if (offset === 0) {
-        setResults(response.items);
+      if (newOffset === 0) {
+        setResults(response.laws);
       } else {
-        setResults(prev => [...prev, ...response.items]);
+        setResults(prev => [...prev, ...response.laws]);
       }
       setTotalCount(response.total_count);
-      setNextOffset(response.next_offset);
+      setOffset(newOffset + response.count);
       setHasSearched(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '検索中にエラーが発生しました');
+      setError(e instanceof Error ? e.message : '取得中にエラーが発生しました');
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -109,23 +77,21 @@ export default function SearchScreen() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       performSearch(text, selectedType, 0);
-    }, 600);
+    }, 500);
   };
 
   const handleTypeFilter = (type: LawType | null) => {
     setSelectedType(type);
-    if (query.trim()) {
-      performSearch(query, type, 0);
-    }
+    performSearch(query, type, 0);
   };
 
   const handleLoadMore = () => {
-    if (!loadingMore && results.length < totalCount && query.trim()) {
-      performSearch(query, selectedType, nextOffset);
+    if (!loadingMore && results.length < totalCount) {
+      performSearch(query, selectedType, offset);
     }
   };
 
-  const handleItemPress = (item: KeywordSearchItem) => {
+  const handleItemPress = (item: LawListItem) => {
     router.push({
       pathname: '/law-detail' as never,
       params: {
@@ -137,7 +103,7 @@ export default function SearchScreen() {
     });
   };
 
-  const renderItem = ({ item }: { item: KeywordSearchItem }) => (
+  const renderItem = ({ item }: { item: LawListItem }) => (
     <Pressable
       style={({ pressed }) => [
         styles.card,
@@ -155,17 +121,17 @@ export default function SearchScreen() {
       <Text style={[styles.lawTitle, { color: colors.foreground }]} numberOfLines={2}>
         {item.revision_info.law_title}
       </Text>
-      {item.sentences.length > 0 && (
-        <View style={[styles.sentenceContainer, { borderLeftColor: colors.primary }]}>
-          {item.sentences.slice(0, 2).map((s, i) => (
-            <HighlightedText
-              key={i}
-              html={s.text}
-              style={[styles.sentenceText, { color: colors.muted }]}
-            />
-          ))}
-        </View>
+      {item.revision_info.category && (
+        <Text style={[styles.category, { color: colors.muted }]}>
+          分類: {item.revision_info.category}
+        </Text>
       )}
+      <View style={styles.cardFooter}>
+        <Text style={[styles.dateText, { color: colors.muted }]}>
+          公布: {item.law_info.promulgation_date}
+        </Text>
+        <IconSymbol name="chevron.right" size={16} color={colors.muted} />
+      </View>
     </Pressable>
   );
 
@@ -174,23 +140,29 @@ export default function SearchScreen() {
     if (!hasSearched) {
       return (
         <View style={styles.emptyContainer}>
-          <IconSymbol name="magnifyingglass" size={48} color={colors.muted} />
+          <IconSymbol name="book.fill" size={48} color={colors.muted} />
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-            法令を検索
+            法令一覧
           </Text>
           <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-            キーワードを入力すると、{'\n'}条文の中から該当する法令を検索します
+            法令名を入力して検索するか、{'\n'}種別を選択して絞り込んでください
           </Text>
+          <Pressable
+            style={[styles.loadAllButton, { backgroundColor: colors.primary }]}
+            onPress={() => performSearch('', selectedType, 0)}
+          >
+            <Text style={styles.loadAllButtonText}>すべての法令を表示</Text>
+          </Pressable>
         </View>
       );
     }
     return (
       <View style={styles.emptyContainer}>
         <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-          検索結果なし
+          該当なし
         </Text>
         <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-          「{query}」に一致する条文が見つかりませんでした
+          条件に一致する法令が見つかりませんでした
         </Text>
       </View>
     );
@@ -209,7 +181,7 @@ export default function SearchScreen() {
     <ScreenContainer containerClassName="bg-background">
       {/* ヘッダー */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>法令検索</Text>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>法令一覧</Text>
         {hasSearched && (
           <Text style={[styles.countText, { color: colors.muted }]}>
             {totalCount.toLocaleString()}件
@@ -223,7 +195,7 @@ export default function SearchScreen() {
           <IconSymbol name="magnifyingglass" size={18} color={colors.muted} />
           <TextInput
             style={[styles.searchInput, { color: colors.foreground }]}
-            placeholder="キーワードで条文を検索..."
+            placeholder="法令名で検索..."
             placeholderTextColor={colors.muted}
             value={query}
             onChangeText={handleQueryChange}
@@ -239,8 +211,7 @@ export default function SearchScreen() {
             <Pressable
               onPress={() => {
                 setQuery('');
-                setResults([]);
-                setHasSearched(false);
+                performSearch('', selectedType, 0);
               }}
               style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
             >
@@ -283,11 +254,11 @@ export default function SearchScreen() {
         />
       </View>
 
-      {/* 検索結果 */}
+      {/* 法令一覧 */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.muted }]}>検索中...</Text>
+          <Text style={[styles.loadingText, { color: colors.muted }]}>取得中...</Text>
         </View>
       ) : error ? (
         <View style={styles.emptyContainer}>
@@ -302,7 +273,7 @@ export default function SearchScreen() {
       ) : (
         <FlatList
           data={results}
-          keyExtractor={(item) => `${item.law_info.law_id}-${item.sentences[0]?.position ?? '0'}`}
+          keyExtractor={(item) => item.law_info.law_id}
           renderItem={renderItem}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={renderFooter}
@@ -375,7 +346,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    gap: 12,
+    gap: 10,
   },
   listContentEmpty: {
     flex: 1,
@@ -384,7 +355,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    gap: 8,
+    gap: 6,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -400,19 +371,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 22,
   },
-  sentenceContainer: {
-    borderLeftWidth: 3,
-    paddingLeft: 10,
-    gap: 4,
+  category: {
+    fontSize: 12,
+    lineHeight: 16,
   },
-  sentenceText: {
-    fontSize: 13,
-    lineHeight: 20,
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
   },
-  highlight: {
-    backgroundColor: '#FEF08A',
-    color: '#713F12',
-    fontWeight: '600',
+  dateText: {
+    fontSize: 12,
   },
   loadingContainer: {
     flex: 1,
@@ -438,6 +408,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  loadAllButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  loadAllButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
   errorText: {
     fontSize: 14,
