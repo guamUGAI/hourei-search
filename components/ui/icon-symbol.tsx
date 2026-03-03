@@ -29,6 +29,11 @@ const MAPPING = {
   "slider.horizontal.3": "tune",
   "info.circle": "info-outline",
   "info.circle.fill": "info",
+  "calendar": "calendar-today",
+  "calendar.badge.plus": "event-note",
+  "photo": "image",
+  "photo.badge.plus": "add-photo-alternate",
+  "doc.badge.plus": "note-add",
 } as IconMapping;
 
 /**
