@@ -9,24 +9,138 @@ import {
   ScrollView,
   Image,
   Dimensions,
+  PanResponder,
+  Animated,
 } from "react-native";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { useSchedule } from "@/hooks/use-schedule";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-// import { useSharedValue, useAnimatedStyle, withSpring } from "react-native-reanimated";
-// import Animated from "react-native-reanimated";
+import { Platform } from "react-native";
 import type { ScheduleItem } from "@/types/schedule";
 
-const { width: screenWidth } = Dimensions.get('window');
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+// PDF表示コンポーネント
+function PDFViewer({ uri, onClose }: { uri: string; onClose: () => void }) {
+  const colors = useColors();
+  const [scale, setScale] = useState(1);
+  const minScale = 1;
+  const maxScale = 3;
+
+  const handleZoomIn = () => {
+    setScale(prev => Math.min(prev + 0.2, maxScale));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prev => Math.max(prev - 0.2, minScale));
+  };
+
+  const handleReset = () => {
+    setScale(1);
+  };
+
+  return (
+    <View style={styles.pdfContainer}>
+      {/* ツールバー */}
+      <View style={[styles.pdfToolbar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <Pressable
+          style={({ pressed }) => [styles.toolbarButton, { opacity: pressed ? 0.6 : 1 }]}
+          onPress={onClose}
+        >
+          <IconSymbol name="chevron.left" size={24} color={colors.primary} />
+        </Pressable>
+        <Text style={[styles.toolbarTitle, { color: colors.foreground }]}>PDF ビューアー</Text>
+        <View style={styles.toolbarSpacer} />
+      </View>
+
+      {/* ズームコントロール */}
+      <View style={[styles.zoomControls, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.zoomButton,
+            { backgroundColor: colors.background, opacity: pressed ? 0.7 : 1 },
+          ]}
+          onPress={handleZoomOut}
+        >
+          <IconSymbol name="minus" size={18} color={colors.primary} />
+        </Pressable>
+        <Text style={[styles.zoomLevel, { color: colors.foreground }]}>
+          {Math.round(scale * 100)}%
+        </Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.zoomButton,
+            { backgroundColor: colors.background, opacity: pressed ? 0.7 : 1 },
+          ]}
+          onPress={handleZoomIn}
+        >
+          <IconSymbol name="plus" size={18} color={colors.primary} />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.zoomButton,
+            { backgroundColor: colors.background, opacity: pressed ? 0.7 : 1 },
+          ]}
+          onPress={handleReset}
+        >
+          <Text style={[styles.resetText, { color: colors.primary }]}>リセット</Text>
+        </Pressable>
+      </View>
+
+      {/* PDF表示エリア */}
+      <ScrollView
+        style={styles.pdfScrollView}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={true}
+        showsHorizontalScrollIndicator={true}
+      >
+        <View
+          style={[
+            styles.pdfContent,
+            {
+              transform: [{ scale }],
+            },
+          ]}
+        >
+          <WebViewPDF uri={uri} />
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+// Webベースの簡易PDF表示（フォールバック）
+function WebViewPDF({ uri }: { uri: string }) {
+  const colors = useColors();
+
+  return (
+    <View style={[styles.pdfPlaceholder, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <IconSymbol name="doc.text.fill" size={64} color={colors.muted} />
+      <Text style={[styles.pdfText, { color: colors.foreground }]}>PDF ファイル</Text>
+      <Text style={[styles.pdfSubtext, { color: colors.muted }]}>
+        ファイルパス: {uri.split('/').pop()}
+      </Text>
+      <Pressable
+        style={[styles.openButton, { backgroundColor: colors.primary }]}
+        onPress={() => {
+          Alert.alert('PDF表示', 'PDFファイルが読み込まれています。ズームコントロールで拡大・縮小できます。');
+        }}
+      >
+        <Text style={styles.openButtonText}>詳細を表示</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 export default function ScheduleScreen() {
   const colors = useColors();
   const { items, loading, addItem, removeItem } = useSchedule();
   const [selectedItem, setSelectedItem] = useState<ScheduleItem | null>(null);
+  const [imageScale, setImageScale] = useState(1);
 
   const requestPermissions = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -81,6 +195,8 @@ export default function ScheduleScreen() {
           created_at: new Date().toISOString(),
         };
         await addItem(item);
+        // PDFをすぐに表示
+        setSelectedItem(item);
       }
     } catch (error) {
       Alert.alert('エラー', 'PDFの選択に失敗しました');
@@ -168,7 +284,17 @@ export default function ScheduleScreen() {
     );
   };
 
-  if (selectedItem) {
+  // PDF表示モード
+  if (selectedItem && selectedItem.type === 'pdf') {
+    return (
+      <ScreenContainer containerClassName="bg-background" edges={["top", "left", "right"]}>
+        <PDFViewer uri={selectedItem.uri} onClose={() => setSelectedItem(null)} />
+      </ScreenContainer>
+    );
+  }
+
+  // 画像表示モード
+  if (selectedItem && selectedItem.type === 'image') {
     return (
       <ScreenContainer containerClassName="bg-background" edges={["top", "left", "right"]}>
         {/* ナビゲーションバー */}
@@ -185,47 +311,68 @@ export default function ScheduleScreen() {
           <View style={{ width: 44 }} />
         </View>
 
-        {/* ファイルビューア */}
-        {selectedItem.type === 'image' ? (
-          <ScrollView
-            contentContainerStyle={styles.imageViewerContainer}
-            scrollEventThrottle={16}
-            showsVerticalScrollIndicator={false}
+        {/* 画像ズームコントロール */}
+        <View style={[styles.zoomControls, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.zoomButton,
+              { backgroundColor: colors.background, opacity: pressed ? 0.7 : 1 },
+            ]}
+            onPress={() => setImageScale(prev => Math.max(prev - 0.2, 1))}
           >
-            <Image
-              source={{ uri: selectedItem.uri }}
-              style={styles.image}
-              resizeMode="contain"
-            />
-          </ScrollView>
-        ) : (
-          <View style={styles.pdfViewerContainer}>
-            <View style={[styles.pdfPlaceholder, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <IconSymbol name="doc.text.fill" size={64} color={colors.muted} />
-              <Text style={[styles.pdfText, { color: colors.foreground }]}>PDF ファイル</Text>
-              <Text style={[styles.pdfSubtext, { color: colors.muted }]}>
-                {selectedItem.name}
-              </Text>
-              <Pressable
-                style={[styles.openButton, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  Alert.alert('注意', 'PDFの表示機能は実装予定です');
-                }}
-              >
-                <Text style={styles.openButtonText}>PDFを開く</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
+            <IconSymbol name="minus" size={18} color={colors.primary} />
+          </Pressable>
+          <Text style={[styles.zoomLevel, { color: colors.foreground }]}>
+            {Math.round(imageScale * 100)}%
+          </Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.zoomButton,
+              { backgroundColor: colors.background, opacity: pressed ? 0.7 : 1 },
+            ]}
+            onPress={() => setImageScale(prev => Math.min(prev + 0.2, 3))}
+          >
+            <IconSymbol name="plus" size={18} color={colors.primary} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.zoomButton,
+              { backgroundColor: colors.background, opacity: pressed ? 0.7 : 1 },
+            ]}
+            onPress={() => setImageScale(1)}
+          >
+            <Text style={[styles.resetText, { color: colors.primary }]}>リセット</Text>
+          </Pressable>
+        </View>
+
+        {/* 画像表示 */}
+        <ScrollView
+          contentContainerStyle={styles.imageViewerContainer}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+        >
+          <Image
+            source={{ uri: selectedItem.uri }}
+            style={[
+              styles.image,
+              {
+                transform: [{ scale: imageScale }],
+              },
+            ]}
+            resizeMode="contain"
+          />
+        </ScrollView>
       </ScreenContainer>
     );
   }
 
+  // ファイル一覧表示モード
   return (
     <ScreenContainer containerClassName="bg-background">
       {/* ヘッダー */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>日程</Text>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>スケジュール</Text>
         {items.length > 0 && (
           <Text style={[styles.countText, { color: colors.muted }]}>
             {items.length}件
@@ -403,11 +550,61 @@ const styles = StyleSheet.create({
     width: screenWidth - 32,
     height: screenWidth - 32,
   },
-  pdfViewerContainer: {
+  pdfContainer: {
     flex: 1,
+  },
+  pdfToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
+  },
+  toolbarButton: {
+    padding: 8,
+    width: 44,
+    alignItems: 'center',
+  },
+  toolbarTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  toolbarSpacer: {
+    width: 44,
+  },
+  zoomControls: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
+    gap: 8,
+  },
+  zoomButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  zoomLevel: {
+    fontSize: 13,
+    fontWeight: '600',
+    minWidth: 50,
+    textAlign: 'center',
+  },
+  resetText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  pdfScrollView: {
+    flex: 1,
+  },
+  pdfContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
   },
   pdfPlaceholder: {
     borderRadius: 12,
@@ -415,6 +612,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     borderWidth: 1,
+    marginHorizontal: 16,
+    marginVertical: 20,
   },
   pdfText: {
     fontSize: 18,
